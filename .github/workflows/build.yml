@@ -1,0 +1,31 @@
+name: build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  windows-msbuild:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          msbuild .\Source\FrostbiteEngineTools.sln /m /p:Configuration=Release /p:Platform=x64 /v:minimal
+
+      - name: Build SDK bridge template
+        shell: pwsh
+        run: |
+          msbuild .\Templates\FrostbiteUniversalSdkBridge\FrostbiteUniversalSdkBridge.sln /m /p:Configuration=Release /p:Platform=x64 /v:minimal

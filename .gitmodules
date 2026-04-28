@@ -1,0 +1,3 @@
+[submodule "Source/ThirdParty/minhook"]
+	path = Source/ThirdParty/minhook
+	url = https://github.com/TsudaKageyu/minhook.git

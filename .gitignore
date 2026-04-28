@@ -1,0 +1,59 @@
+# Build output
+**/build/
+**/bin/
+**/obj/
+**/x64/
+**/x86/
+**/Debug/
+**/Release/
+**/RelWithDebInfo/
+**/MinSizeRel/
+
+# Visual Studio and MSBuild user state
+.vs/
+*.user
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.VC.opendb
+*.ipch
+*.tlog
+*.lastbuildstate
+*.log
+
+# Local runtime output
+GeneratedSDK/
+Logs/
+*.dmp
+*.trace
+
+# Staged binaries and local injection artifacts
+INJECT_THIS_*.dll
+Tools/*.dll
+Tools/*.exe
+Tools/*.pdb
+Tools/*.ilk
+Tools/*.lib
+Tools/*.exp
+
+# Keep public headers/docs in Tools tracked.
+!Tools/*.h
+!Tools/*.md
+!Tools/*.txt
+
+# Generated/private IDE and OS files
+Desktop.ini
+Thumbs.db
+.DS_Store
+
+# Local environment/config overrides
+*.local.ini
+*.local.json
+*.user.ini
+*.user.json
+
+# Archives generated for releases
+*.zip
+*.7z
+*.rar

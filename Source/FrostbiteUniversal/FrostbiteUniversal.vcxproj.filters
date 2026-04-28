@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source">
+      <UniqueIdentifier>{41489B47-CF70-4012-B4C2-B2E42B2D52B4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include">
+      <UniqueIdentifier>{5E921AA0-E83F-45AB-8549-85B83F04E708}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shared ImGui">
+      <UniqueIdentifier>{9C96CC1E-4569-4DD5-852F-F6624F5B92C7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\MinHook">
+      <UniqueIdentifier>{93A073B5-3DA5-44F9-A3F1-4792803100DB}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Include\FrostbiteUniversal.h">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\FrostbiteLog.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\FrostbiteRuntime.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\OverlayHost.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\SharedImGuiBridge.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\FrostbiteLog.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\FrostbiteRuntime.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\dllmain.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\ImGuiBridge.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\OverlayHost.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ThirdParty\minhook\src\buffer.c">
+      <Filter>ThirdParty\MinHook</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ThirdParty\minhook\src\hook.c">
+      <Filter>ThirdParty\MinHook</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ThirdParty\minhook\src\trampoline.c">
+      <Filter>ThirdParty\MinHook</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ThirdParty\minhook\src\hde\hde64.c">
+      <Filter>ThirdParty\MinHook</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\imgui.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\imgui_demo.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\imgui_draw.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\imgui_tables.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\imgui_widgets.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\backends\imgui_impl_dx11.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\backends\imgui_impl_dx12.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(UnityImGuiDir)\backends\imgui_impl_win32.cpp">
+      <Filter>Shared ImGui</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
