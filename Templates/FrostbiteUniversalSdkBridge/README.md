@@ -398,6 +398,15 @@ Place this file beside `FrostbiteUniversal.dll`:
 FrostbiteUniversal_Bridge.ini
 ```
 
+If `ModuleName=` names a bridge DLL and that DLL is beside `FrostbiteUniversal.dll`, Universal will explicitly load that bridge module before resolving exports. This makes a local one-folder test setup possible:
+
+```text
+TestBundle/
+  INJECT_THIS_FrostbiteUniversal.dll
+  FrostbiteUniversalSdkBridge.dll
+  FrostbiteUniversal_Bridge.ini
+```
+
 Use the template config:
 
 ```ini

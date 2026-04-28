@@ -413,6 +413,7 @@ namespace
     HostSetSkyboxTintFn g_hostSetSkyboxTint = nullptr;
     HostSetChamsFn g_hostSetChams = nullptr;
     HostSetFogTintFn g_hostSetFogTint = nullptr;
+    HMODULE g_loadedConfiguredBridgeModule = nullptr;
     HostGetTimescaleFn g_originalHookedHostGetTimescale = nullptr;
     HostGetFeatureStateFn g_originalHookedHostGetFeatureState = nullptr;
     bool g_minhookInitialized = false;
@@ -633,6 +634,48 @@ namespace
         return ::GetProcAddress(module, exportName.c_str());
     }
 
+    HMODULE LoadConfiguredBridgeModuleLocked()
+    {
+        if (g_bridgeExportNames.moduleName.empty())
+            return nullptr;
+
+        if (g_loadedConfiguredBridgeModule)
+            return g_loadedConfiguredBridgeModule;
+
+        const std::wstring directory = GetUniversalDllDirectory();
+        if (directory.empty())
+        {
+            FrostbiteUniversal::Log::Write(L"Project bridge module was not auto-loaded because the Universal DLL directory was unavailable");
+            return nullptr;
+        }
+
+        const fs::path bridgePath = fs::path(directory) / g_bridgeExportNames.moduleName;
+        std::error_code ec;
+        if (!fs::exists(bridgePath, ec))
+        {
+            std::wstringstream message;
+            message << L"Project bridge module was not auto-loaded; file was not found beside Universal: "
+                    << bridgePath.wstring();
+            FrostbiteUniversal::Log::Write(message.str());
+            return nullptr;
+        }
+
+        g_loadedConfiguredBridgeModule = ::LoadLibraryW(bridgePath.c_str());
+        if (!g_loadedConfiguredBridgeModule)
+        {
+            std::wstringstream message;
+            message << L"Project bridge LoadLibrary failed for " << bridgePath.wstring()
+                    << L" (GetLastError=" << ::GetLastError() << L")";
+            FrostbiteUniversal::Log::Write(message.str());
+            return nullptr;
+        }
+
+        std::wstringstream message;
+        message << L"Project bridge module auto-loaded: " << bridgePath.wstring();
+        FrostbiteUniversal::Log::Write(message.str());
+        return g_loadedConfiguredBridgeModule;
+    }
+
     void ResolveHostBridgeExportsLocked()
     {
         if (g_hostBridgeResolved)
@@ -643,6 +686,9 @@ namespace
         HMODULE host = g_bridgeExportNames.moduleName.empty()
             ? ::GetModuleHandleW(nullptr)
             : ::GetModuleHandleW(g_bridgeExportNames.moduleName.c_str());
+        if (!host && !g_bridgeExportNames.moduleName.empty())
+            host = LoadConfiguredBridgeModuleLocked();
+
         if (!host)
         {
             std::wstringstream message;
