@@ -10,6 +10,9 @@
     <Filter Include="Shared ImGui">
       <UniqueIdentifier>{9C96CC1E-4569-4DD5-852F-F6624F5B92C7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="SDK Backend">
+      <UniqueIdentifier>{AFB6F5D5-C961-4DB2-AB6A-25E2268310F2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="ThirdParty\MinHook">
       <UniqueIdentifier>{93A073B5-3DA5-44F9-A3F1-4792803100DB}</UniqueIdentifier>
     </Filter>
@@ -32,11 +35,20 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Source\FrostbiteAdapter.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="Source\FrostbiteLog.cpp">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="Source\FrostbiteRuntime.cpp">
       <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\FrostbiteSdkBackend.cpp">
+      <Filter>SDK Backend</Filter>
+    </ClCompile>
+    <ClCompile Include="..\FrostbiteSDKGenerator\Source\main.cpp">
+      <Filter>SDK Backend</Filter>
     </ClCompile>
     <ClCompile Include="Source\dllmain.cpp">
       <Filter>Source</Filter>

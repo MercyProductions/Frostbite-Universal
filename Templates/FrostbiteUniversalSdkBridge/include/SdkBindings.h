@@ -124,4 +124,5 @@ namespace Aegis::FrostbiteUniversalTemplate::Sdk
     int ApplyFeatureState(const FrostbiteUniversalFeatureState& state);
     bool ReadFeatureState(FrostbiteUniversalFeatureState& outState);
     FeaturePreviewState GetFeaturePreviewState();
+    bool ExecuteConsoleCommand(const wchar_t* command);
 }

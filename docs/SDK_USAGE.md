@@ -28,9 +28,9 @@ Stage the local tools:
 ```powershell
 New-Item -ItemType Directory -Force -Path ".\Tools" | Out-Null
 Copy-Item ".\Source\FrostbiteSDKGenerator\build\x64\Release\FrostbiteSDKGenerator.exe" ".\Tools\FrostbiteSDKGenerator.exe" -Force
-Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" ".\Tools\FrostbiteSDKGenerator.dll" -Force
-Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" ".\Tools\INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll" -Force
 Copy-Item ".\Source\FrostbiteSDKGenerator\Include\FrostbiteSDKGenerator.h" ".\Tools\FrostbiteSDKGenerator.h" -Force
+Copy-Item ".\Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll" ".\INJECT_THIS_FrostbiteUniversal.dll" -Force
+Copy-Item ".\Source\FrostbiteUniversal\Include\FrostbiteUniversal.h" ".\Tools\FrostbiteUniversal.h" -Force
 ```
 
 ## 2. Generate A Folder-Only Static SDK
@@ -54,33 +54,27 @@ Useful static reports:
 
 ## 3. Generate A Live Runtime SDK
 
-Use this only with an owned/local process where you have permission to load the SDK dumper DLL.
+Use this only with an owned/local process where you have permission to load the Universal debug DLL.
 
-The injectable SDK dumper is:
+The injectable Universal tool is:
 
 ```text
-Tools/INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll
+INJECT_THIS_FrostbiteUniversal.dll
 ```
 
-When loaded into your owned process, it auto-runs by default and writes:
+When loaded into your owned process, press F4, open the SDK tab, and choose `Run Full SDK Dump`. It writes:
 
 ```text
 GeneratedSDK/Injected_<process>_<pid>/
 ```
 
-If your host/plugin system should call the export manually, set this before loading:
-
-```text
-FROSTBITE_SDKGEN_NO_AUTORUN=1
-```
-
-Then call:
+If your host/plugin system should call the backend manually, call:
 
 ```cpp
 extern "C" __declspec(dllimport)
-int __stdcall FrostbiteSDKGenerator_GenerateInjectedSnapshot(const wchar_t* outputDir);
+int __stdcall FrostbiteUniversal_StartSdkDump(const wchar_t* outputDir);
 
-FrostbiteSDKGenerator_GenerateInjectedSnapshot(L".\\GeneratedSDK\\ManualSnapshot");
+FrostbiteUniversal_StartSdkDump(L".\\GeneratedSDK\\ManualSnapshot");
 ```
 
 ## 4. Read The Generated Reports

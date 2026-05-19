@@ -421,6 +421,7 @@ GetFeatureState=FrostbiteGame_GetUniversalFeatureState
 SetSkyboxTint=FrostbiteGame_SetSkyboxTint
 SetDebugMaterialTint=FrostbiteGame_SetDebugMaterialTint
 SetFogTint=FrostbiteGame_SetFogTint
+ExecuteConsoleCommand=FrostbiteGame_ExecuteConsoleCommand
 ```
 
 If you compiled the bridge directly into your EXE, set:
@@ -462,6 +463,7 @@ void __stdcall FrostbiteGame_SetDebugMaterialTint(int enabled, float r, float g,
 void __stdcall FrostbiteGame_SetFogTint(int enabled, float r, float g, float b, float density);
 void __stdcall FrostbiteGame_SetFov(float fovDegrees);
 void __stdcall FrostbiteGame_SetViewAngles(float pitch, float yaw, float roll);
+int __stdcall FrostbiteGame_ExecuteConsoleCommand(const wchar_t* command);
 ```
 
 The template already exports these for you. It also exports the older `FrostbiteGame_SetChams` name as a compatibility alias for existing local configs.

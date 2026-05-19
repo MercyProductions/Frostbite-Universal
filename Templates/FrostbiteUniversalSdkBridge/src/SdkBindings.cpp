@@ -4,6 +4,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cwchar>
+#include <cwctype>
 #include <iterator>
 #include <mutex>
 #include <utility>
@@ -72,6 +74,24 @@ namespace Aegis::FrostbiteUniversalTemplate::Sdk
                 Clamp01(b),
                 Clamp01(a)
             };
+        }
+
+        std::wstring TrimLower(std::wstring value)
+        {
+            while (!value.empty() && std::iswspace(value.front()))
+                value.erase(value.begin());
+            while (!value.empty() && std::iswspace(value.back()))
+                value.pop_back();
+
+            std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
+                return static_cast<wchar_t>(std::towlower(ch));
+            });
+            return value;
+        }
+
+        bool StartsWith(const std::wstring& value, const wchar_t* prefix)
+        {
+            return prefix && value.rfind(prefix, 0) == 0;
         }
 
         Vector3 Add(Vector3 left, Vector3 right)
@@ -863,5 +883,43 @@ namespace Aegis::FrostbiteUniversalTemplate::Sdk
         g_previewState.timescale = liveTimescale;
         RecomputeTimingLocked();
         return g_previewState;
+    }
+
+    bool ExecuteConsoleCommand(const wchar_t* command)
+    {
+        InitializeIfNeeded();
+        const std::wstring text = TrimLower(command ? command : L"");
+        if (text.empty())
+            return false;
+
+        if (text == L"refresh")
+        {
+            RefreshActorModelCache();
+            return true;
+        }
+
+        if (StartsWith(text, L"timescale "))
+        {
+            wchar_t* end = nullptr;
+            const float value = std::wcstof(text.c_str() + 10, &end);
+            if (end && end != text.c_str() + 10)
+            {
+                SetTimescale(value);
+                return true;
+            }
+        }
+
+        if (StartsWith(text, L"fov "))
+        {
+            wchar_t* end = nullptr;
+            const float value = std::wcstof(text.c_str() + 4, &end);
+            if (end && end != text.c_str() + 4)
+            {
+                ApplyFov(value);
+                return true;
+            }
+        }
+
+        return false;
     }
 }

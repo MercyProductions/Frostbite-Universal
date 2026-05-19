@@ -2,13 +2,14 @@
 
 Frostbite-Universal is a Windows C++17 workspace for owned-process Frostbite research, local debugging, SDK-style metadata generation, and ImGui-based project diagnostics.
 
-The repository contains two main projects plus a reusable SDK bridge template:
+The repository contains two main Visual Studio projects plus a reusable SDK bridge template:
 
 | Project | Output | Purpose |
 | --- | --- | --- |
-| `FrostbiteUniversal` | `FrostbiteUniversal.dll` | Runtime diagnostics DLL with console logging, ImGui controls, live actor/model display, debug boxes, snaplines, FOV/view-angle template controls, and an opt-in bridge for projects you own. |
-| `FrostbiteSDKGenerator` / `FrostbiteSDKGeneratorDll` | `FrostbiteSDKGenerator.exe` and `.dll` | Read-only SDK dumper that generates headers, JSON, candidate reports, traces, labels, dashboards, and reverse-engineering research output from an owned/local process or folder scan. |
-| `FrostbiteUniversalSdkBridge` | `FrostbiteUniversalSdkBridge.dll` | Visual Studio template showing how to wire an existing generated SDK into Universal through clean `FrostbiteGame_*` exports. |
+| `FrostbiteSDKGenerator` | `FrostbiteSDKGenerator.exe` | Standalone read-only SDK/report dumper for owned/local process folders. |
+| `FrostbiteUniversal` | `FrostbiteUniversal.dll` | Universal ImGui debug tool. It embeds the SDK generator backend so the in-game SDK tab can run the full dumper and write the same generated reports. |
+
+The `FrostbiteUniversalSdkBridge` template is separate from the main solution and shows how to wire an existing generated SDK into Universal through clean `FrostbiteGame_*` exports.
 
 This project is intended for local research, modding documentation, debugging, and owned-project analysis only. It does not include anti-cheat bypasses, stealth/evasion logic, protected-file decryption, or memory patching guidance.
 
@@ -22,12 +23,13 @@ This project is intended for local research, modding documentation, debugging, a
 - Timescale, skybox tint, fog tint, debug material tint, and wireframe/debug flags.
 - Actor/model table with name, class, asset path, position, size, radius, flags, and optional screen projection.
 - Template debug drawing for model boxes and snaplines.
+- Standard adapter diagnostics: `FrostbiteUniversal_RegisterEntityProvider`, `FrostbiteUniversal_RegisterViewProjectionProvider`, `FrostbiteUniversal_RegisterViewportProvider`, provider timing, W2S projection, JSON frame snapshots, and offline replay through `FrostbiteUniversal_LoadSnapshotJson`.
 - FOV override and view-angle preview fields for owned debug/editor cameras.
 - Local logs and reports under ignored `Logs/` output.
 
 ### FrostbiteSDKGenerator
 
-- EXE and DLL modes.
+- Standalone EXE mode and embedded Universal-backend mode.
 - Static folder scan and live injected snapshot modes.
 - PE module/import/export analysis.
 - String discovery, UTF-16/ASCII scanning, xref discovery, RTTI/vtable cleanup, `.pdata` function bounds, candidate scoring, call graph output, function traces, and system clustering.
@@ -76,10 +78,8 @@ This project is intended for local research, modding documentation, debugging, a
    New-Item -ItemType Directory -Force -Path ".\Tools" | Out-Null
    Copy-Item ".\Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll" ".\INJECT_THIS_FrostbiteUniversal.dll" -Force
    Copy-Item ".\Source\FrostbiteSDKGenerator\build\x64\Release\FrostbiteSDKGenerator.exe" ".\Tools\FrostbiteSDKGenerator.exe" -Force
-   Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" ".\Tools\FrostbiteSDKGenerator.dll" -Force
-   Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" ".\Tools\INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll" -Force
-   Copy-Item ".\Source\FrostbiteSDKGenerator\Include\FrostbiteSDKGenerator.h" ".\Tools\FrostbiteSDKGenerator.h" -Force
-   Copy-Item ".\Source\FrostbiteUniversal\Include\FrostbiteUniversal.h" ".\Tools\FrostbiteUniversal.h" -Force
+  Copy-Item ".\Source\FrostbiteSDKGenerator\Include\FrostbiteSDKGenerator.h" ".\Tools\FrostbiteSDKGenerator.h" -Force
+  Copy-Item ".\Source\FrostbiteUniversal\Include\FrostbiteUniversal.h" ".\Tools\FrostbiteUniversal.h" -Force
    ```
 
 5. Read the SDK guide:
@@ -89,6 +89,23 @@ This project is intended for local research, modding documentation, debugging, a
    - [GitHub release checklist](docs/GITHUB_RELEASE_CHECKLIST.md)
    - [Safety and scope](docs/SAFETY_AND_SCOPE.md)
 
+6. Verify the DLL and required exports:
+
+   ```powershell
+   .\Scripts\VerifyBuild.ps1 -Configuration Release
+   .\Scripts\VerifyBuild.ps1 -Configuration Debug
+   ```
+
+## Static Game-Root Scans
+
+`FrostbiteSDKGenerator` already supports repeated `--game-root` arguments. The wrapper script keeps those runs repeatable:
+
+```powershell
+.\Scripts\Invoke-FrostbiteGameRootScan.ps1 -GameRoot "D:\Games\Some Frostbite Game"
+```
+
+Use `-IncludeThirdParty` when you need dependency modules in the static report. `-IncludeAntiCheat` is intentionally opt-in and should only be used for owned/offline research scopes.
+
 ## Repository Layout
 
 ```text
@@ -97,7 +114,6 @@ This project is intended for local research, modding documentation, debugging, a
 |   |-- FrostbiteEngineTools.sln
 |   |-- FrostbiteUniversal/
 |   |-- FrostbiteSDKGenerator/
-|   |-- FrostbiteSDKGeneratorDll/
 |   |-- imgui/
 |   `-- ThirdParty/minhook/
 |-- Tools/                  # Local staged tools; binaries are ignored by git

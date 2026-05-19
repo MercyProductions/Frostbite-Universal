@@ -177,3 +177,9 @@ AEGIS_BRIDGE_EXPORT void AEGIS_BRIDGE_CALL FrostbiteGame_SetViewAngles(
     Aegis::FrostbiteUniversalTemplate::Sdk::InitializeIfNeeded();
     Aegis::FrostbiteUniversalTemplate::Sdk::ApplyViewAngles({ pitch, yaw, roll });
 }
+
+AEGIS_BRIDGE_EXPORT int AEGIS_BRIDGE_CALL FrostbiteGame_ExecuteConsoleCommand(const wchar_t* command)
+{
+    Aegis::FrostbiteUniversalTemplate::Sdk::InitializeIfNeeded();
+    return Aegis::FrostbiteUniversalTemplate::Sdk::ExecuteConsoleCommand(command) ? 1 : 0;
+}

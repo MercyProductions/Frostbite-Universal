@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cctype>
+#include <cstdio>
 #include <iterator>
 #include <mutex>
 #include <sstream>
@@ -46,6 +47,7 @@ namespace
     std::uint64_t g_frameCount = 0;
     std::uint64_t g_toggleCount = 0;
     char g_moduleFilter[128] = {};
+    char g_sdkSymbolFilter[128] = {};
     HANDLE g_hotkeyThread = nullptr;
     HANDLE g_hotkeyStopEvent = nullptr;
 
@@ -64,6 +66,14 @@ namespace
     bool g_timescaleSliderInitialized = false;
     FrostbiteUniversalFeatureState g_featureState = {};
     bool g_featureStateInitialized = false;
+    bool g_liveActorFrameRefresh = false;
+    int g_liveActorRefreshIntervalMs = 1000;
+    bool g_drawLikelyPlayersOnly = false;
+    bool g_labelLikelyPlayerScores = true;
+    float g_likelyPlayerThreshold = 55.0f;
+    DWORD g_lastLiveActorRefreshTick = 0;
+    int g_lastLiveActorRefreshCount = 0;
+    std::uint64_t g_liveActorRefreshPasses = 0;
 
     const char* RendererName(RendererKind renderer)
     {
@@ -226,6 +236,32 @@ namespace
         return text.empty() ? "none" : text;
     }
 
+    std::string GeneratedSdkSymbolFlagsToText(std::uint32_t flags)
+    {
+        std::string text;
+        auto append = [&text](std::uint32_t mask, const char* name, std::uint32_t value) {
+            if ((value & mask) == 0)
+                return;
+
+            if (!text.empty())
+                text += ", ";
+            text += name;
+        };
+
+        append(FrostbiteGeneratedSdkSymbol_FunctionCandidate, "function", flags);
+        append(FrostbiteGeneratedSdkSymbol_String, "string", flags);
+        append(FrostbiteGeneratedSdkSymbol_PlayerLike, "player-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_ActorLike, "actor-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_EntityLike, "entity-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_ModelLike, "model-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_MeshLike, "mesh-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_ConsoleLike, "console-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_CameraLike, "camera-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_TransformLike, "transform-like", flags);
+        append(FrostbiteGeneratedSdkSymbol_TimeLike, "time-like", flags);
+        return text.empty() ? "none" : text;
+    }
+
     std::string ActorModelFlagsToText(std::uint32_t flags)
     {
         std::string text;
@@ -248,6 +284,8 @@ namespace
         append(FrostbiteActorModel_FromManualAdd, "manual", flags);
         append(FrostbiteActorModel_HasScreenProjection, "screen", flags);
         append(FrostbiteActorModel_ViewTarget, "view-target", flags);
+        append(FrostbiteActorModel_LikelyPlayer, "likely-player", flags);
+        append(FrostbiteActorModel_LikelyNonPlayer, "likely-non-player", flags);
 
         return text.empty() ? "none" : text;
     }
@@ -278,6 +316,42 @@ namespace
         state.viewAngles[2] = 0.0f;
         state.hasViewTarget = 1;
         return true;
+    }
+
+    bool WantsLiveActorRefresh(const FrostbiteUniversalFeatureState& state, bool force)
+    {
+        const std::uint32_t liveVisualFlags =
+            FrostbiteFeature_DebugBoxes |
+            FrostbiteFeature_Snaplines |
+            FrostbiteFeature_ViewAnglePreview;
+        return force || ((state.enabledFlags & liveVisualFlags) != 0);
+    }
+
+    void RefreshLiveActorsForFrame(const FrostbiteUniversalFeatureState& state, bool force)
+    {
+        if (!g_liveActorFrameRefresh || !WantsLiveActorRefresh(state, force))
+            return;
+
+        const DWORD now = ::GetTickCount();
+        const DWORD interval = static_cast<DWORD>(g_liveActorRefreshIntervalMs < 0 ? 0 : g_liveActorRefreshIntervalMs);
+        if (interval > 0 &&
+            g_lastLiveActorRefreshTick != 0 &&
+            now - g_lastLiveActorRefreshTick < interval)
+        {
+            return;
+        }
+
+        g_lastLiveActorRefreshTick = now;
+        g_lastLiveActorRefreshCount = FrostbiteUniversal_RefreshActorModelList();
+        ++g_liveActorRefreshPasses;
+    }
+
+    DWORD LiveActorRefreshAgeMs()
+    {
+        if (g_lastLiveActorRefreshTick == 0)
+            return 0;
+
+        return ::GetTickCount() - g_lastLiveActorRefreshTick;
     }
 
     void DrawActorModelDebugOverlay(const FrostbiteUniversalFeatureState& state)
@@ -311,6 +385,8 @@ namespace
             FrostbiteActorModelInfo item = {};
             if (!FrostbiteUniversal_GetActorModelInfo(index, &item))
                 continue;
+            if (g_drawLikelyPlayersOnly && item.likelyPlayerScore < g_likelyPlayerThreshold)
+                continue;
             if ((item.flags & FrostbiteActorModel_HasScreenProjection) == 0)
                 continue;
 
@@ -322,6 +398,12 @@ namespace
                 drawList->AddRect(minPoint, maxPoint, boxColor, 0.0f, 0, 2.0f);
             if (drawSnaplines)
                 drawList->AddLine(snapOrigin, center, snapColor, 1.5f);
+            if (g_labelLikelyPlayerScores && item.likelyPlayerScore >= g_likelyPlayerThreshold)
+            {
+                char scoreLabel[48] = {};
+                sprintf_s(scoreLabel, "%.0f", item.likelyPlayerScore);
+                drawList->AddText(ImVec2(maxPoint.x + 4.0f, minPoint.y), targetColor, scoreLabel);
+            }
             if (state.hasViewTarget && item.id == state.viewTargetActorId)
             {
                 drawList->AddCircle(center, 8.0f, targetColor, 24, 2.0f);
@@ -344,6 +426,197 @@ namespace
             ch = static_cast<char>(::tolower(static_cast<unsigned char>(ch)));
 
         return lowerValue.find(lowerFilter) != std::string::npos;
+    }
+
+    void ApplyFrostbiteStyle()
+    {
+        ImGui::StyleColorsDark();
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 10.0f;
+        style.ChildRounding = 8.0f;
+        style.FrameRounding = 6.0f;
+        style.PopupRounding = 8.0f;
+        style.ScrollbarRounding = 10.0f;
+        style.GrabRounding = 6.0f;
+        style.TabRounding = 6.0f;
+        style.WindowPadding = ImVec2(14.0f, 12.0f);
+        style.FramePadding = ImVec2(10.0f, 6.0f);
+        style.ItemSpacing = ImVec2(9.0f, 7.0f);
+        style.ItemInnerSpacing = ImVec2(7.0f, 5.0f);
+        style.ScrollbarSize = 12.0f;
+
+        ImVec4* colors = style.Colors;
+        colors[ImGuiCol_WindowBg] = ImVec4(0.035f, 0.040f, 0.050f, 0.96f);
+        colors[ImGuiCol_ChildBg] = ImVec4(0.055f, 0.060f, 0.074f, 0.92f);
+        colors[ImGuiCol_PopupBg] = ImVec4(0.045f, 0.050f, 0.064f, 0.98f);
+        colors[ImGuiCol_Border] = ImVec4(0.42f, 0.08f, 0.12f, 0.55f);
+        colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        colors[ImGuiCol_FrameBg] = ImVec4(0.090f, 0.100f, 0.120f, 0.95f);
+        colors[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.07f, 0.10f, 0.95f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.48f, 0.08f, 0.13f, 0.95f);
+        colors[ImGuiCol_TitleBg] = ImVec4(0.040f, 0.045f, 0.055f, 1.0f);
+        colors[ImGuiCol_TitleBgActive] = ImVec4(0.075f, 0.045f, 0.055f, 1.0f);
+        colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.20f, 0.28f, 1.0f);
+        colors[ImGuiCol_SliderGrab] = ImVec4(0.88f, 0.16f, 0.22f, 1.0f);
+        colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.28f, 0.35f, 1.0f);
+        colors[ImGuiCol_Button] = ImVec4(0.16f, 0.055f, 0.075f, 0.95f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.38f, 0.08f, 0.12f, 0.95f);
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.66f, 0.10f, 0.16f, 1.0f);
+        colors[ImGuiCol_Header] = ImVec4(0.22f, 0.065f, 0.09f, 0.85f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.42f, 0.08f, 0.13f, 0.90f);
+        colors[ImGuiCol_HeaderActive] = ImVec4(0.62f, 0.10f, 0.16f, 0.95f);
+        colors[ImGuiCol_Tab] = ImVec4(0.08f, 0.09f, 0.11f, 0.95f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.38f, 0.08f, 0.12f, 0.95f);
+        colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.06f, 0.08f, 1.0f);
+        colors[ImGuiCol_TableHeaderBg] = ImVec4(0.10f, 0.08f, 0.10f, 1.0f);
+        colors[ImGuiCol_TableRowBg] = ImVec4(0.045f, 0.050f, 0.060f, 0.88f);
+        colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.065f, 0.070f, 0.084f, 0.88f);
+    }
+
+    void DrawMetricCard(const char* label, const char* value, const ImVec4& accent)
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.070f, 0.075f, 0.090f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(accent.x, accent.y, accent.z, 0.55f));
+        ImGui::BeginChild(label, ImVec2(0.0f, 58.0f), true, ImGuiWindowFlags_NoScrollbar);
+        ImGui::TextColored(accent, "%s", label);
+        ImGui::TextWrapped("%s", value ? value : "unknown");
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+    }
+
+    void DrawStatusPill(const char* label, bool healthy)
+    {
+        const ImVec4 color = healthy
+            ? ImVec4(0.26f, 0.95f, 0.52f, 1.0f)
+            : ImVec4(1.0f, 0.23f, 0.30f, 1.0f);
+        ImGui::TextColored(color, "%s: %s", label, healthy ? "ready" : "offline");
+    }
+
+    void DrawGeneratedSdkRuntimeStatus()
+    {
+        FrostbiteGeneratedSdkInfo sdkInfo = {};
+        const bool loaded = FrostbiteUniversal_GetGeneratedSdkInfo(&sdkInfo) != 0;
+
+        ImGui::Text("Generated SDK cache: %s", loaded ? "loaded" : "not loaded");
+        if (loaded)
+        {
+            ImGui::Text("Reload generation: %u", sdkInfo.reloadGeneration);
+            ImGui::Text("Generated files: %u  Bytes: %llu",
+                sdkInfo.generatedFileCount,
+                static_cast<unsigned long long>(sdkInfo.generatedBytes));
+            ImGui::Text("Manifest: %u games / %u files", sdkInfo.manifestGameCount, sdkInfo.manifestFileCount);
+            ImGui::Text("Runtime candidates: %u functions", sdkInfo.runtimeFunctionCandidateCount);
+            ImGui::Text("Process snapshot: %u modules / %u symbol groups", sdkInfo.processModuleCount, sdkInfo.processSymbolCount);
+            ImGui::Text("Strings: %u values / %u xrefs", sdkInfo.stringCount, sdkInfo.stringXrefCount);
+            ImGui::Text("Classified SDK symbols: %u", sdkInfo.generatedSymbolCount);
+            ImGui::TextWrapped("Output: %s", WideToUtf8(sdkInfo.outputDir).c_str());
+        }
+        else
+        {
+            ImGui::TextDisabled("No generated SDK folder has been loaded into the runtime cache yet.");
+        }
+
+        if (ImGui::Button("Dump Current Process SDK"))
+            FrostbiteUniversal_StartSdkDump(nullptr);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Reload Generated SDK Cache"))
+            FrostbiteUniversal_ReloadGeneratedSdk(nullptr);
+    }
+
+    void DrawGeneratedSdkSymbolPanel()
+    {
+        FrostbiteGeneratedSdkInfo sdkInfo = {};
+        const bool loaded = FrostbiteUniversal_GetGeneratedSdkInfo(&sdkInfo) != 0;
+        const std::uint32_t symbolCount = FrostbiteUniversal_GetGeneratedSdkSymbolCount();
+
+        ImGui::Text("Generated SDK symbols: %u", symbolCount);
+        ImGui::SameLine();
+        if (ImGui::Button("Dump Current Process SDK"))
+            FrostbiteUniversal_StartSdkDump(nullptr);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Reload SDK Cache"))
+            FrostbiteUniversal_ReloadGeneratedSdk(nullptr);
+
+        if (loaded)
+        {
+            ImGui::Text("Functions: %u  Strings: %u  Xrefs: %u  Classified: %u",
+                sdkInfo.runtimeFunctionCandidateCount,
+                sdkInfo.stringCount,
+                sdkInfo.stringXrefCount,
+                sdkInfo.generatedSymbolCount);
+            ImGui::TextWrapped("Source: %s", WideToUtf8(sdkInfo.outputDir).c_str());
+        }
+        else
+        {
+            ImGui::TextWrapped("No current-process generated SDK cache is loaded yet. Run a dump from this process, then reload.");
+        }
+
+        ImGui::SetNextItemWidth(260.0f);
+        ImGui::InputText("SDK symbol filter", g_sdkSymbolFilter, static_cast<int>(std::size(g_sdkSymbolFilter)));
+        ImGui::SameLine();
+        ImGui::TextDisabled("Try: player, soldier, entity, transform, camera, console, fov");
+
+        if (ImGui::BeginTable("GeneratedSdkSymbols", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 280.0f)))
+        {
+            ImGui::TableSetupColumn("Source");
+            ImGui::TableSetupColumn("Score");
+            ImGui::TableSetupColumn("Flags");
+            ImGui::TableSetupColumn("Category");
+            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Address");
+            ImGui::TableSetupColumn("Module");
+            ImGui::TableSetupColumn("Detail");
+            ImGui::TableHeadersRow();
+
+            for (std::uint32_t index = 0; index < symbolCount; ++index)
+            {
+                FrostbiteGeneratedSdkSymbolInfo symbol = {};
+                if (!FrostbiteUniversal_GetGeneratedSdkSymbolInfo(index, &symbol))
+                    continue;
+
+                const std::string source = WideToUtf8(symbol.source);
+                const std::string category = WideToUtf8(symbol.category);
+                const std::string moduleName = WideToUtf8(symbol.moduleName);
+                const std::string name = WideToUtf8(symbol.name);
+                const std::string address = WideToUtf8(symbol.addressHex);
+                const std::string detail = WideToUtf8(symbol.detail);
+                const std::string flags = GeneratedSdkSymbolFlagsToText(symbol.flags);
+
+                if (!TextMatchesFilter(source, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(category, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(moduleName, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(name, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(address, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(detail, g_sdkSymbolFilter) &&
+                    !TextMatchesFilter(flags, g_sdkSymbolFilter))
+                {
+                    continue;
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(source.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%u", symbol.score);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextWrapped("%s", flags.c_str());
+                ImGui::TableSetColumnIndex(3);
+                ImGui::TextWrapped("%s", category.c_str());
+                ImGui::TableSetColumnIndex(4);
+                ImGui::TextWrapped("%s", name.c_str());
+                ImGui::TableSetColumnIndex(5);
+                ImGui::TextUnformatted(address.c_str());
+                ImGui::TableSetColumnIndex(6);
+                ImGui::TextWrapped("%s", moduleName.c_str());
+                ImGui::TableSetColumnIndex(7);
+                ImGui::TextWrapped("%s", detail.c_str());
+            }
+
+            ImGui::EndTable();
+        }
     }
 
     void ToggleVisibleUnlocked(const wchar_t* source)
@@ -492,7 +765,7 @@ namespace
         io.IniFilename = nullptr;
         io.LogFilename = nullptr;
 
-        ImGui::StyleColorsDark();
+        ApplyFrostbiteStyle();
         FrostbiteUniversal::Log::Write(L"ImGui context created");
         return true;
     }
@@ -613,6 +886,7 @@ namespace
             return;
 
         InitializeFeatureUiState();
+        RefreshLiveActorsForFrame(g_featureState, false);
         DrawActorModelDebugOverlay(g_featureState);
 
         FrostbiteRuntimeInfo info = {};
@@ -635,11 +909,40 @@ namespace
         ImGui::TextUnformatted("Frostbite Universal");
         ImGui::SameLine();
         ImGui::TextDisabled("F4 toggles this panel");
+        ImGui::Separator();
+        DrawStatusPill("Runtime", FrostbiteUniversal_IsFrostbiteProcess() != 0);
+        ImGui::SameLine();
+        DrawStatusPill("Actor bridge", FrostbiteUniversal_HasActorModelBridge() != 0);
+        ImGui::SameLine();
+        DrawStatusPill("Feature bridge", FrostbiteUniversal_HasFeatureBridge() != 0);
 
         if (ImGui::BeginTabBar("FrostbiteUniversalTabs"))
         {
-            if (ImGui::BeginTabItem("Overview"))
+            if (ImGui::BeginTabItem("Runtime"))
             {
+                char rendererValue[96] = {};
+                sprintf_s(rendererValue, "%s / %llu calls", RendererName(g_renderer), static_cast<unsigned long long>(g_renderCallCount));
+                char moduleValue[96] = {};
+                sprintf_s(moduleValue, "%u total / %u Frostbite", info.moduleCount, info.frostbiteModuleCount);
+                char archiveValue[96] = {};
+                sprintf_s(archiveValue, "%u TOC / %u CAS", info.tocFileCount, info.casFileCount);
+                char catalogValue[96] = {};
+                sprintf_s(catalogValue, "%u entries", FrostbiteUniversal_GetCatalogCount());
+
+                if (ImGui::BeginTable("OverviewCards", 4, ImGuiTableFlags_SizingStretchSame))
+                {
+                    ImGui::TableNextColumn();
+                    DrawMetricCard("Renderer", rendererValue, ImVec4(1.0f, 0.20f, 0.28f, 1.0f));
+                    ImGui::TableNextColumn();
+                    DrawMetricCard("Modules", moduleValue, ImVec4(0.95f, 0.58f, 0.18f, 1.0f));
+                    ImGui::TableNextColumn();
+                    DrawMetricCard("Archives", archiveValue, ImVec4(0.42f, 0.70f, 1.0f, 1.0f));
+                    ImGui::TableNextColumn();
+                    DrawMetricCard("Catalog", catalogValue, ImVec4(0.42f, 0.95f, 0.58f, 1.0f));
+                    ImGui::EndTable();
+                }
+
+                ImGui::Spacing();
                 ImGui::Text("Renderer: %s", RendererName(g_renderer));
                 ImGui::Text("Render calls: %llu", static_cast<unsigned long long>(g_renderCallCount));
                 ImGui::Text("Rendered frames: %llu", static_cast<unsigned long long>(g_frameCount));
@@ -658,6 +961,7 @@ namespace
                 ImGui::Text("Requested timescale: %.2f", FrostbiteUniversal_GetTimescale());
                 ImGui::Text("Flags: 0x%08X", info.flags);
                 ImGui::TextWrapped("Flag names: %s", runtimeFlags.c_str());
+                DrawGeneratedSdkRuntimeStatus();
 
                 if (ImGui::Button("Refresh Runtime"))
                     FrostbiteUniversal_Refresh();
@@ -665,6 +969,87 @@ namespace
                 ImGui::SameLine();
                 if (ImGui::Button("Write Report"))
                     FrostbiteUniversal_WriteRuntimeReport(nullptr);
+
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Adapter"))
+            {
+                FrostbiteCapabilityInfo capability = {};
+                FrostbiteAdapterTiming adapterTiming = {};
+                FrostbiteUniversal_GetCapabilityInfo(&capability);
+                FrostbiteUniversal_GetAdapterTiming(&adapterTiming);
+
+                ImGui::Text("Renderer backend: %s", WideToUtf8(capability.rendererBackend).c_str());
+                ImGui::Text("Provider timing: entities %.3f ms | matrix %.3f ms | viewport %.3f ms",
+                    adapterTiming.entityProviderMs,
+                    adapterTiming.matrixProviderMs,
+                    adapterTiming.viewportProviderMs);
+                ImGui::Text("Entities: %u | projected %u | clipped %u | frame %llu",
+                    adapterTiming.entityCount,
+                    adapterTiming.projectedCount,
+                    adapterTiming.clippedCount,
+                    static_cast<unsigned long long>(adapterTiming.frameId));
+                ImGui::TextWrapped("Details: %s", WideToUtf8(capability.details).c_str());
+
+                if (ImGui::Button("Update Providers"))
+                    FrostbiteUniversal_UpdateProviders();
+
+                ImGui::SameLine();
+                if (ImGui::Button("Print Entities"))
+                    FrostbiteUniversal_PrintCurrentEntities();
+
+                ImGui::SameLine();
+                if (ImGui::Button("Write Snapshot"))
+                {
+                    wchar_t tempPath[MAX_PATH] = {};
+                    if (::GetTempPathW(MAX_PATH, tempPath) != 0)
+                    {
+                        std::wstring path = tempPath;
+                        if (!path.empty() && path.back() != L'\\')
+                            path.push_back(L'\\');
+                        path += L"FrostbiteUniversal_Snapshot.json";
+                        FrostbiteUniversal_WriteSnapshotJson(path.c_str());
+                    }
+                }
+
+                auto drawCapability = [](const char* name, int value, const char* detail) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(name);
+                    ImGui::TableSetColumnIndex(1);
+                    if (value)
+                        ImGui::TextColored(ImVec4(0.35f, 1.0f, 0.55f, 1.0f), "Pass");
+                    else
+                        ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f), "Warn");
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TextWrapped("%s", detail);
+                };
+
+                if (ImGui::BeginTable("FrostbiteAdapterCapabilityTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 260.0f)))
+                {
+                    ImGui::TableSetupColumn("Capability");
+                    ImGui::TableSetupColumn("State");
+                    ImGui::TableSetupColumn("Details");
+                    ImGui::TableHeadersRow();
+                    drawCapability("Frostbite detected", capability.frostbiteDetected, "Runtime module/filesystem heuristics identify Frostbite.");
+                    drawCapability("Data directory", capability.dataDirectoryFound, "Data folder present near the process.");
+                    drawCapability("InitFS", capability.initFsFound, "initfs evidence found.");
+                    drawCapability("TOC/CAS archives", capability.tocArchivesFound || capability.casArchivesFound, "Frostbite archive evidence found.");
+                    drawCapability("Render core", capability.renderCoreFound, "Frostbite render module or D3D backend evidence found.");
+                    drawCapability("Exports", capability.exportsFound, "Named PE exports available for resolver/reporting.");
+                    drawCapability("ImGui", capability.imguiAvailable, "Shared ImGui compiled into the DLL.");
+                    drawCapability("Overlay running", capability.overlayRunning, "Self-hosted overlay or in-process ImGui path is active.");
+                    drawCapability("Entity provider", capability.entityProviderRegistered, "Provider or host bridge has supplied actor/model access.");
+                    drawCapability("Matrix provider", capability.viewProjectionProviderRegistered, "View-projection provider registered.");
+                    drawCapability("Viewport provider", capability.viewportProviderRegistered, "Viewport provider registered.");
+                    drawCapability("Viewport valid", capability.viewportValid, "Viewport dimensions are finite and positive.");
+                    drawCapability("Matrix valid", capability.matrixValid, "View-projection matrix is finite and nonzero.");
+                    drawCapability("W2S projection", capability.w2sProjectionWorking, "Synthetic world point can be projected.");
+                    drawCapability("Snapshot ready", capability.snapshotReady, "Entity/actor/model snapshot cache has entries.");
+                    drawCapability("SDK cache", capability.generatedSdkLoaded, "Generated SDK metadata reloaded into runtime memory.");
+                    ImGui::EndTable();
+                }
 
                 ImGui::EndTabItem();
             }
@@ -719,7 +1104,7 @@ namespace
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Project"))
+            if (ImGui::BeginTabItem("Overlay"))
             {
                 InitializeFeatureUiState();
 
@@ -829,6 +1214,10 @@ namespace
                 ImGui::SameLine();
                 flagCheckbox("Draw snaplines", FrostbiteFeature_Snaplines);
                 ImGui::SameLine();
+                ImGui::Checkbox("Likely players only", &g_drawLikelyPlayersOnly);
+                ImGui::SameLine();
+                ImGui::Checkbox("Score labels", &g_labelLikelyPlayerScores);
+                ImGui::SliderFloat("Likely player threshold", &g_likelyPlayerThreshold, 0.0f, 100.0f, "%.0f");
                 flagCheckbox("FOV override", FrostbiteFeature_FovOverride);
                 ImGui::SliderFloat("FOV degrees", &g_featureState.fovDegrees, 30.0f, 140.0f, "%.1f");
                 flagCheckbox("View-angle preview", FrostbiteFeature_ViewAnglePreview);
@@ -856,8 +1245,23 @@ namespace
 
                 ImGui::Separator();
 
+                ImGui::Checkbox("Refresh live actors every rendered frame", &g_liveActorFrameRefresh);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(150.0f);
+                ImGui::SliderInt("Min refresh ms", &g_liveActorRefreshIntervalMs, 250, 5000);
+                RefreshLiveActorsForFrame(g_featureState, true);
+                ImGui::Text("Live refresh: %d entries, %lu ms old, %llu passes",
+                    g_lastLiveActorRefreshCount,
+                    static_cast<unsigned long>(LiveActorRefreshAgeMs()),
+                    static_cast<unsigned long long>(g_liveActorRefreshPasses));
+
                 if (ImGui::Button("Refresh Actors/Models"))
-                    FrostbiteUniversal_RefreshActorModelList();
+                {
+                    const int count = FrostbiteUniversal_RefreshActorModelList();
+                    g_lastLiveActorRefreshTick = ::GetTickCount();
+                    g_lastLiveActorRefreshCount = count;
+                    ++g_liveActorRefreshPasses;
+                }
 
                 ImGui::SameLine();
                 if (ImGui::Button("Clear Local List"))
@@ -867,9 +1271,10 @@ namespace
                 ImGui::Text("Live actor/model entries: %u", actorModelCount);
                 ImGui::InputText("Actor/model filter", g_actorModelFilter, static_cast<int>(std::size(g_actorModelFilter)));
 
-                if (ImGui::BeginTable("LiveActorModelTable", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 255.0f)))
+                if (ImGui::BeginTable("LiveActorModelTable", 10, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 255.0f)))
                 {
                     ImGui::TableSetupColumn("ID");
+                    ImGui::TableSetupColumn("Score");
                     ImGui::TableSetupColumn("Actor");
                     ImGui::TableSetupColumn("Class");
                     ImGui::TableSetupColumn("Model");
@@ -892,6 +1297,9 @@ namespace
                         const std::string assetPath = WideToUtf8(item.assetPath);
                         const std::string flags = ActorModelFlagsToText(item.flags);
 
+                        if (g_drawLikelyPlayersOnly && item.likelyPlayerScore < g_likelyPlayerThreshold)
+                            continue;
+
                         if (!TextMatchesFilter(actorName, g_actorModelFilter) &&
                             !TextMatchesFilter(className, g_actorModelFilter) &&
                             !TextMatchesFilter(modelName, g_actorModelFilter) &&
@@ -905,20 +1313,22 @@ namespace
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("%llu", static_cast<unsigned long long>(item.id));
                         ImGui::TableSetColumnIndex(1);
-                        ImGui::TextWrapped("%s", actorName.c_str());
+                        ImGui::Text("%.0f", item.likelyPlayerScore);
                         ImGui::TableSetColumnIndex(2);
-                        ImGui::TextWrapped("%s", className.c_str());
+                        ImGui::TextWrapped("%s", actorName.c_str());
                         ImGui::TableSetColumnIndex(3);
-                        ImGui::TextWrapped("%s", modelName.c_str());
+                        ImGui::TextWrapped("%s", className.c_str());
                         ImGui::TableSetColumnIndex(4);
-                        ImGui::Text("%.2f, %.2f, %.2f", item.position[0], item.position[1], item.position[2]);
+                        ImGui::TextWrapped("%s", modelName.c_str());
                         ImGui::TableSetColumnIndex(5);
-                        ImGui::Text("%.2f, %.2f, %.2f", item.size[0], item.size[1], item.size[2]);
+                        ImGui::Text("%.2f, %.2f, %.2f", item.position[0], item.position[1], item.position[2]);
                         ImGui::TableSetColumnIndex(6);
-                        ImGui::Text("%.2f", item.radius);
+                        ImGui::Text("%.2f, %.2f, %.2f", item.size[0], item.size[1], item.size[2]);
                         ImGui::TableSetColumnIndex(7);
-                        ImGui::TextWrapped("%s", flags.c_str());
+                        ImGui::Text("%.2f", item.radius);
                         ImGui::TableSetColumnIndex(8);
+                        ImGui::TextWrapped("%s", flags.c_str());
+                        ImGui::TableSetColumnIndex(9);
                         ImGui::TextWrapped("%s", assetPath.c_str());
                     }
 
@@ -990,7 +1400,13 @@ namespace
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Reports"))
+            if (ImGui::BeginTabItem("SDK Symbols"))
+            {
+                DrawGeneratedSdkSymbolPanel();
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Diagnostics"))
             {
                 ImGui::TextWrapped("Runtime reports are written with the current process/module snapshot.");
                 if (ImGui::Button("Write Runtime Report"))
@@ -1023,7 +1439,7 @@ namespace
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Tools"))
+            if (ImGui::BeginTabItem("Settings"))
             {
                 ImGui::Checkbox("Auto-refresh runtime", &g_autoRefresh);
                 ImGui::SliderFloat("Refresh seconds", &g_autoRefreshSeconds, 0.25f, 10.0f, "%.2f");

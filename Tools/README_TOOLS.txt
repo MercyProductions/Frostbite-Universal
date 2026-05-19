@@ -2,13 +2,13 @@ These are local staged Frostbite-Universal tool files.
 
 Compiled binaries are ignored by Git. Rebuild them locally or attach them to a GitHub Release.
 
-SDK dump injection target:
+SDK dump target:
 
-Tools\INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll
+INJECT_THIS_FrostbiteUniversal.dll
 
-Inject that when you want the SDK generator DLL to auto-run inside an owned/local process.
+Inject that when you want the Universal ImGui tool inside an owned/local process, then open the SDK tab and run the full SDK dump.
 
-It opens or attaches a console, captures only the app it was loaded into, and writes output to:
+It opens or attaches a console for the embedded generator backend, captures only the app it was loaded into, and writes output to:
 
 GeneratedSDK\Injected_<process>_<pid>
 
@@ -29,7 +29,5 @@ INJECT_THIS_FrostbiteUniversal.dll
 Tool files:
 
 - FrostbiteSDKGenerator.exe: command-line SDK/report generator
-- FrostbiteSDKGenerator.dll: callable SDK generator library
-- INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll: injectable SDK dumper build
-- FrostbiteSDKGenerator.h: C API header for the generator DLL
-- FrostbiteUniversal.h: C API/types for the runtime Universal DLL and owned-project bridge
+- FrostbiteSDKGenerator.h: C API header for the standalone and embedded generator backend
+- FrostbiteUniversal.h: C API/types for the runtime Universal DLL, embedded dumper backend, and owned-project bridge

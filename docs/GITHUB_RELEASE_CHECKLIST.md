@@ -67,7 +67,6 @@ Suggested release package:
 FrostbiteToolkit_<version>/
   FrostbiteUniversal.dll
   FrostbiteSDKGenerator.exe
-  FrostbiteSDKGenerator.dll
   FrostbiteUniversal.h
   FrostbiteSDKGenerator.h
   README_TOOLS.txt

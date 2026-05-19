@@ -6,8 +6,6 @@ Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "FrostbiteUniversal", "Frost
 EndProject
 Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "FrostbiteSDKGenerator", "FrostbiteSDKGenerator\FrostbiteSDKGenerator.vcxproj", "{A63B68D6-0E00-4841-B245-91AFB60C9693}"
 EndProject
-Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "FrostbiteSDKGeneratorDll", "FrostbiteSDKGeneratorDll\FrostbiteSDKGeneratorDll.vcxproj", "{5F1B412F-5BE5-458C-8C99-6D77DB3A541E}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -22,10 +20,6 @@ Global
 		{A63B68D6-0E00-4841-B245-91AFB60C9693}.Debug|x64.Build.0 = Debug|x64
 		{A63B68D6-0E00-4841-B245-91AFB60C9693}.Release|x64.ActiveCfg = Release|x64
 		{A63B68D6-0E00-4841-B245-91AFB60C9693}.Release|x64.Build.0 = Release|x64
-		{5F1B412F-5BE5-458C-8C99-6D77DB3A541E}.Debug|x64.ActiveCfg = Debug|x64
-		{5F1B412F-5BE5-458C-8C99-6D77DB3A541E}.Debug|x64.Build.0 = Debug|x64
-		{5F1B412F-5BE5-458C-8C99-6D77DB3A541E}.Release|x64.ActiveCfg = Release|x64
-		{5F1B412F-5BE5-458C-8C99-6D77DB3A541E}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -60,6 +60,56 @@ struct FrostbiteRuntimeInfo
     std::uint32_t flags;
 };
 
+struct FrostbiteGeneratedSdkInfo
+{
+    wchar_t outputDir[MAX_PATH];
+    wchar_t manifestPath[MAX_PATH];
+    wchar_t runtimeIntrospectionPath[MAX_PATH];
+    wchar_t injectedProcessPath[MAX_PATH];
+    wchar_t stringsPath[MAX_PATH];
+    wchar_t stringXrefsPath[MAX_PATH];
+    std::uint32_t generatedFileCount;
+    std::uint64_t generatedBytes;
+    std::uint32_t manifestFileCount;
+    std::uint32_t manifestGameCount;
+    std::uint32_t runtimeFunctionCandidateCount;
+    std::uint32_t processModuleCount;
+    std::uint32_t processSymbolCount;
+    std::uint32_t stringCount;
+    std::uint32_t stringXrefCount;
+    std::uint32_t reloadGeneration;
+    std::uint32_t generatedSymbolCount;
+    int lastDumpResult;
+};
+
+enum FrostbiteGeneratedSdkSymbolFlags : std::uint32_t
+{
+    FrostbiteGeneratedSdkSymbol_None = 0,
+    FrostbiteGeneratedSdkSymbol_FunctionCandidate = 1u << 0,
+    FrostbiteGeneratedSdkSymbol_String = 1u << 1,
+    FrostbiteGeneratedSdkSymbol_PlayerLike = 1u << 2,
+    FrostbiteGeneratedSdkSymbol_ActorLike = 1u << 3,
+    FrostbiteGeneratedSdkSymbol_EntityLike = 1u << 4,
+    FrostbiteGeneratedSdkSymbol_ModelLike = 1u << 5,
+    FrostbiteGeneratedSdkSymbol_MeshLike = 1u << 6,
+    FrostbiteGeneratedSdkSymbol_ConsoleLike = 1u << 7,
+    FrostbiteGeneratedSdkSymbol_CameraLike = 1u << 8,
+    FrostbiteGeneratedSdkSymbol_TransformLike = 1u << 9,
+    FrostbiteGeneratedSdkSymbol_TimeLike = 1u << 10
+};
+
+struct FrostbiteGeneratedSdkSymbolInfo
+{
+    wchar_t source[32];
+    wchar_t category[64];
+    wchar_t moduleName[MAX_PATH];
+    wchar_t name[256];
+    wchar_t addressHex[32];
+    wchar_t detail[512];
+    std::uint32_t score;
+    std::uint32_t flags;
+};
+
 enum FrostbiteExportFlags : std::uint32_t
 {
     FrostbiteExport_None = 0,
@@ -112,7 +162,9 @@ enum FrostbiteActorModelFlags : std::uint32_t
     FrostbiteActorModel_FromHostExport = 1u << 6,
     FrostbiteActorModel_FromManualAdd = 1u << 7,
     FrostbiteActorModel_HasScreenProjection = 1u << 8,
-    FrostbiteActorModel_ViewTarget = 1u << 9
+    FrostbiteActorModel_ViewTarget = 1u << 9,
+    FrostbiteActorModel_LikelyPlayer = 1u << 10,
+    FrostbiteActorModel_LikelyNonPlayer = 1u << 11
 };
 
 struct FrostbiteActorModelInfo
@@ -134,11 +186,96 @@ struct FrostbiteActorModelInfo
     float screenBoundsMax[2];
     float screenDepth;
     std::uint32_t flags;
+    float likelyPlayerScore;
+};
+
+enum FrostbiteMatrixFlags : std::uint32_t
+{
+    FrostbiteMatrix_Auto = 0,
+    FrostbiteMatrix_RowMajor = 1u << 0,
+    FrostbiteMatrix_ColumnMajor = 1u << 1,
+    FrostbiteMatrix_D3DDepth = 1u << 2,
+    FrostbiteMatrix_OpenGLDepth = 1u << 3,
+    FrostbiteMatrix_YFlip = 1u << 4
+};
+
+struct FrostbiteVec3
+{
+    float x;
+    float y;
+    float z;
+};
+
+struct FrostbiteViewport
+{
+    float x;
+    float y;
+    float width;
+    float height;
+};
+
+struct FrostbiteMatrix4x4
+{
+    float m[16];
+    std::uint32_t flags;
+};
+
+struct FrostbiteProjectedPoint
+{
+    float x;
+    float y;
+    float depth;
+    std::int32_t clipped;
+};
+
+struct FrostbiteAdapterTiming
+{
+    double entityProviderMs;
+    double matrixProviderMs;
+    double viewportProviderMs;
+    std::uint32_t entityCount;
+    std::uint32_t projectedCount;
+    std::uint32_t clippedCount;
+    std::uint64_t frameId;
+};
+
+struct FrostbiteCapabilityInfo
+{
+    std::int32_t frostbiteDetected;
+    std::int32_t dataDirectoryFound;
+    std::int32_t initFsFound;
+    std::int32_t layoutTocFound;
+    std::int32_t tocArchivesFound;
+    std::int32_t casArchivesFound;
+    std::int32_t engineBuildInfoFound;
+    std::int32_t renderCoreFound;
+    std::int32_t exportsFound;
+    std::int32_t imguiAvailable;
+    std::int32_t overlayRunning;
+    std::int32_t entityProviderRegistered;
+    std::int32_t viewProjectionProviderRegistered;
+    std::int32_t viewportProviderRegistered;
+    std::int32_t viewportValid;
+    std::int32_t matrixValid;
+    std::int32_t w2sProjectionWorking;
+    std::int32_t snapshotReady;
+    std::int32_t generatedSdkLoaded;
+    std::int32_t sdkDumpRunning;
+    wchar_t rendererBackend[32];
+    wchar_t details[256];
 };
 
 using FrostbiteActorModelProviderCallback = std::uint32_t(__stdcall*)(
     FrostbiteActorModelInfo* outItems,
     std::uint32_t maxItems,
+    void* userData);
+
+using FrostbiteViewProjectionProviderCallback = int(__stdcall*)(
+    FrostbiteMatrix4x4* outMatrix,
+    void* userData);
+
+using FrostbiteViewportProviderCallback = int(__stdcall*)(
+    FrostbiteViewport* outViewport,
     void* userData);
 
 using FrostbiteTimescaleCallback = void(__stdcall*)(
@@ -193,6 +330,7 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_IsInitialized();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_IsFrostbiteProcess();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_HasSharedImGui();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_OpenConsole();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ExecuteConsoleCommand(const wchar_t* command);
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetLogPath(wchar_t* outPath, std::uint32_t outPathLength);
 
 FROSTBITEUNIVERSAL_API void FrostbiteUniversal_ImGuiSetVisible(int visible);
@@ -203,6 +341,17 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_OverlayStart();
 FROSTBITEUNIVERSAL_API void FrostbiteUniversal_OverlayStop();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_OverlayIsRunning();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_RunUniversalValidation();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_RunSdkDump(const wchar_t* outputDir);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_StartSdkDump(const wchar_t* outputDir);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_IsSdkDumpRunning();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetLastSdkDumpResult();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetSdkDumpStatus(wchar_t* outStatus, std::uint32_t outStatusLength);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetLastSdkDumpOutputDir(wchar_t* outPath, std::uint32_t outPathLength);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ReloadGeneratedSdk(const wchar_t* outputDir);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_PrimeGeneratedSdkCache(const wchar_t* outputDir);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetGeneratedSdkInfo(FrostbiteGeneratedSdkInfo* outInfo);
+FROSTBITEUNIVERSAL_API std::uint32_t FrostbiteUniversal_GetGeneratedSdkSymbolCount();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetGeneratedSdkSymbolInfo(std::uint32_t index, FrostbiteGeneratedSdkSymbolInfo* outInfo);
 FROSTBITEUNIVERSAL_API void FrostbiteUniversal_ImGuiShutdown();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ImGuiRenderDx11(HWND hwnd, void* d3d11Device, void* d3d11DeviceContext, void* renderTargetView);
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ImGuiRenderDx12(
@@ -227,9 +376,25 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetCatalogInfo(std::uint32_t index
 FROSTBITEUNIVERSAL_API void FrostbiteUniversal_ClearActorModelList();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_AddActorModelInfo(const FrostbiteActorModelInfo* info);
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SetActorModelProvider(FrostbiteActorModelProviderCallback callback, void* userData);
+FROSTBITEUNIVERSAL_API void FrostbiteUniversal_RegisterEntityProvider(FrostbiteActorModelProviderCallback callback, void* userData);
+FROSTBITEUNIVERSAL_API void FrostbiteUniversal_RegisterViewProjectionProvider(FrostbiteViewProjectionProviderCallback callback, void* userData);
+FROSTBITEUNIVERSAL_API void FrostbiteUniversal_RegisterViewportProvider(FrostbiteViewportProviderCallback callback, void* userData);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_UpdateProviders();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SubmitEntitySnapshots(const FrostbiteActorModelInfo* entities, std::uint32_t count);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SubmitViewProjection(const FrostbiteMatrix4x4* matrix);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SubmitViewport(const FrostbiteViewport* viewport);
+FROSTBITEUNIVERSAL_API std::uint32_t FrostbiteUniversal_GetEntityCount();
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetEntitySnapshot(std::uint32_t index, FrostbiteActorModelInfo* outInfo);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetAdapterTiming(FrostbiteAdapterTiming* outTiming);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetCapabilityInfo(FrostbiteCapabilityInfo* outInfo);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ProjectWorldToScreen(const FrostbiteVec3* world, FrostbiteProjectedPoint* outPoint);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_WriteSnapshotJson(const wchar_t* path);
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_LoadSnapshotJson(const wchar_t* path);
+FROSTBITEUNIVERSAL_API void FrostbiteUniversal_PrintCurrentEntities();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_RefreshActorModelList();
 FROSTBITEUNIVERSAL_API std::uint32_t FrostbiteUniversal_GetActorModelCount();
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetActorModelInfo(std::uint32_t index, FrostbiteActorModelInfo* outInfo);
+FROSTBITEUNIVERSAL_API std::uint32_t FrostbiteUniversal_CopyActorModelList(FrostbiteActorModelInfo* outItems, std::uint32_t maxItems);
 
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SetTimescaleCallback(FrostbiteTimescaleCallback callback, void* userData);
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SetTimescale(float timescale);

@@ -415,10 +415,10 @@ No process memory is written.
 3. Inject:
 
 ```text
-Tools\INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll
+INJECT_THIS_FrostbiteUniversal.dll
 ```
 
-4. Watch the console output.
+4. Press F4, open the SDK tab, run the full SDK dump, and watch the console output.
 5. Open:
 
 ```text

@@ -7,9 +7,12 @@
 #include <TlHelp32.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <sstream>
 
@@ -376,6 +379,7 @@ namespace
     using HostSetSkyboxTintFn = void(__stdcall*)(float r, float g, float b, float intensity);
     using HostSetChamsFn = void(__stdcall*)(int enabled, float r, float g, float b, float opacity);
     using HostSetFogTintFn = void(__stdcall*)(int enabled, float r, float g, float b, float density);
+    using HostExecuteConsoleCommandFn = int(__stdcall*)(const wchar_t* command);
 
     struct HostBridgeExportNames
     {
@@ -389,10 +393,13 @@ namespace
         std::string setSkyboxTint = "FrostbiteGame_SetSkyboxTint";
         std::string setChams = "FrostbiteGame_SetChams";
         std::string setFogTint = "FrostbiteGame_SetFogTint";
+        std::string executeConsoleCommand = "FrostbiteGame_ExecuteConsoleCommand";
     };
 
     std::mutex g_projectBridgeMutex;
     std::vector<FrostbiteActorModelInfo> g_actorModelList;
+    DWORD g_lastActorModelRefreshLogTick = 0;
+    std::uint32_t g_lastActorModelRefreshLogCount = UINT32_MAX;
     FrostbiteActorModelProviderCallback g_actorModelProvider = nullptr;
     void* g_actorModelProviderUserData = nullptr;
     FrostbiteTimescaleCallback g_timescaleCallback = nullptr;
@@ -413,6 +420,7 @@ namespace
     HostSetSkyboxTintFn g_hostSetSkyboxTint = nullptr;
     HostSetChamsFn g_hostSetChams = nullptr;
     HostSetFogTintFn g_hostSetFogTint = nullptr;
+    HostExecuteConsoleCommandFn g_hostExecuteConsoleCommand = nullptr;
     HMODULE g_loadedConfiguredBridgeModule = nullptr;
     HostGetTimescaleFn g_originalHookedHostGetTimescale = nullptr;
     HostGetFeatureStateFn g_originalHookedHostGetFeatureState = nullptr;
@@ -534,6 +542,61 @@ namespace
         info.className[std::size(info.className) - 1] = L'\0';
         info.modelName[std::size(info.modelName) - 1] = L'\0';
         info.assetPath[std::size(info.assetPath) - 1] = L'\0';
+
+        const auto containsAny = [](const std::wstring& text, std::initializer_list<const wchar_t*> needles) {
+            for (const wchar_t* needle : needles)
+            {
+                if (needle && text.find(needle) != std::wstring::npos)
+                    return true;
+            }
+            return false;
+        };
+
+        std::wstring text = ToLower(info.actorName);
+        text.push_back(L' ');
+        text += ToLower(info.className);
+        text.push_back(L' ');
+        text += ToLower(info.modelName);
+        text.push_back(L' ');
+        text += ToLower(info.assetPath);
+
+        float score = 0.0f;
+        if ((info.flags & FrostbiteActorModel_Actor) != 0)
+            score += 12.0f;
+        if ((info.flags & FrostbiteActorModel_Dynamic) != 0)
+            score += 18.0f;
+        if ((info.flags & FrostbiteActorModel_Visible) != 0)
+            score += 8.0f;
+        if ((info.flags & FrostbiteActorModel_HasScreenProjection) != 0)
+            score += 10.0f;
+        if ((info.flags & FrostbiteActorModel_Model) != 0)
+            score += 4.0f;
+        if ((info.flags & FrostbiteActorModel_Static) != 0)
+            score -= 35.0f;
+
+        if (containsAny(text, { L"player", L"soldier", L"human", L"character", L"pawn", L"avatar", L"hero", L"survivor", L"client", L"localplayer" }))
+            score += 45.0f;
+        if (containsAny(text, { L"enemy", L"npc", L"ai", L"agent", L"unit", L"creature", L"monster", L"necromorph", L"infected", L"alien" }))
+            score += 34.0f;
+        if (containsAny(text, { L"weapon", L"projectile", L"bullet", L"missile", L"grenade", L"pickup", L"loot", L"item", L"ammo" }))
+            score -= 25.0f;
+        if (containsAny(text, { L"static", L"prop", L"debris", L"terrain", L"foliage", L"vegetation", L"tree", L"rock", L"door", L"light", L"decal", L"fx", L"vfx", L"particle", L"sky", L"water" }))
+            score -= 38.0f;
+        if (containsAny(text, { L"camera", L"trigger", L"volume", L"zone", L"navmesh", L"path", L"sound", L"audio", L"ui", L"widget", L"hud" }))
+            score -= 30.0f;
+
+        const float maxSize = (std::max)(std::fabs(info.size[0]), (std::max)(std::fabs(info.size[1]), std::fabs(info.size[2])));
+        if (info.radius > 0.01f && info.radius < 5000.0f && maxSize > 0.01f && maxSize < 10000.0f)
+            score += 8.0f;
+        if (info.radius > 5000.0f || maxSize > 10000.0f)
+            score -= 35.0f;
+
+        info.likelyPlayerScore = ClampRange(score, 0.0f, 100.0f);
+        info.flags &= ~(FrostbiteActorModel_LikelyPlayer | FrostbiteActorModel_LikelyNonPlayer);
+        if (info.likelyPlayerScore >= 55.0f)
+            info.flags |= FrostbiteActorModel_LikelyPlayer;
+        else if (info.likelyPlayerScore <= 20.0f)
+            info.flags |= FrostbiteActorModel_LikelyNonPlayer;
     }
 
     std::wstring GetUniversalDllDirectory()
@@ -618,6 +681,7 @@ namespace
         AssignConfiguredExportName(g_bridgeExportNames.setChams, iniPath, L"SetChams");
         AssignConfiguredExportName(g_bridgeExportNames.setChams, iniPath, L"SetDebugMaterialTint");
         AssignConfiguredExportName(g_bridgeExportNames.setFogTint, iniPath, L"SetFogTint");
+        AssignConfiguredExportName(g_bridgeExportNames.executeConsoleCommand, iniPath, L"ExecuteConsoleCommand");
 
         std::wstringstream message;
         message << L"Project bridge export config loaded: " << iniPath.wstring()
@@ -716,6 +780,8 @@ namespace
             GetConfiguredProcAddress(host, g_bridgeExportNames.setChams));
         g_hostSetFogTint = reinterpret_cast<HostSetFogTintFn>(
             GetConfiguredProcAddress(host, g_bridgeExportNames.setFogTint));
+        g_hostExecuteConsoleCommand = reinterpret_cast<HostExecuteConsoleCommandFn>(
+            GetConfiguredProcAddress(host, g_bridgeExportNames.executeConsoleCommand));
 
         if (g_hostGetActorModelCount && g_hostGetActorModelInfo)
             FrostbiteUniversal::Log::Write(L"Project bridge auto-detected actor/model host exports");
@@ -725,6 +791,9 @@ namespace
 
         if (g_hostApplyFeatures || g_hostGetFeatureState || g_hostSetSkyboxTint || g_hostSetChams || g_hostSetFogTint)
             FrostbiteUniversal::Log::Write(L"Project bridge auto-detected feature host exports");
+
+        if (g_hostExecuteConsoleCommand)
+            FrostbiteUniversal::Log::Write(L"Project bridge auto-detected console command host export");
     }
 
     bool HasActorBridgeLocked()
@@ -1058,6 +1127,25 @@ namespace
         }
     }
 
+    bool SehCallHostExecuteConsoleCommandRaw(HostExecuteConsoleCommandFn function, const wchar_t* command, int* outResult, DWORD* exceptionCode)
+    {
+        if (!function || !command || !outResult || !exceptionCode)
+            return false;
+
+        *outResult = 0;
+        *exceptionCode = 0;
+        __try
+        {
+            *outResult = function(command);
+            return true;
+        }
+        __except ((*exceptionCode = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER)
+        {
+            *outResult = 0;
+            return false;
+        }
+    }
+
     bool SafeCallActorModelProvider(
         FrostbiteActorModelProviderCallback provider,
         FrostbiteActorModelInfo* outItems,
@@ -1267,9 +1355,30 @@ namespace
         return true;
     }
 
+    bool SafeCallHostExecuteConsoleCommand(HostExecuteConsoleCommandFn function, const wchar_t* command)
+    {
+        int result = 0;
+        DWORD exceptionCode = 0;
+        if (!SehCallHostExecuteConsoleCommandRaw(function, command, &result, &exceptionCode))
+        {
+            if (exceptionCode != 0)
+            {
+                std::wstringstream message;
+                message << L"Configured console command bridge export threw SEH exception 0x" << std::hex << exceptionCode;
+                FrostbiteUniversal::Log::Write(message.str());
+            }
+
+            return false;
+        }
+
+        return result != 0;
+    }
+
+    bool PathExistsNoThrow(const fs::path& path);
+
     bool FindFileRecursive(const fs::path& root, const std::wstring& fileName, std::size_t maxVisited = 4096)
     {
-        if (!fs::exists(root))
+        if (!PathExistsNoThrow(root))
             return false;
 
         const std::wstring wanted = ToLower(fileName);
@@ -1281,7 +1390,8 @@ namespace
             if (ec || ++visited > maxVisited)
                 break;
 
-            if (!entry.is_regular_file())
+            std::error_code entryError;
+            if (!entry.is_regular_file(entryError) || entryError)
                 continue;
 
             if (ToLower(entry.path().filename().wstring()) == wanted)
@@ -1293,7 +1403,7 @@ namespace
 
     bool CountFilesWithExtensionRecursive(const fs::path& root, const std::wstring& extension, std::uint32_t& count, std::size_t maxVisited = 20000)
     {
-        if (!fs::exists(root))
+        if (!PathExistsNoThrow(root))
             return false;
 
         std::error_code ec;
@@ -1304,7 +1414,8 @@ namespace
             if (ec || ++visited > maxVisited)
                 break;
 
-            if (!entry.is_regular_file())
+            std::error_code entryError;
+            if (!entry.is_regular_file(entryError) || entryError)
                 continue;
 
             if (ToLower(entry.path().extension().wstring()) == extension)
@@ -1312,6 +1423,12 @@ namespace
         }
 
         return count > 0;
+    }
+
+    bool PathExistsNoThrow(const fs::path& path)
+    {
+        std::error_code ec;
+        return !path.empty() && fs::exists(path, ec);
     }
 
     bool IsValidImageRange(std::uintptr_t base, std::uint32_t imageSize, std::uint32_t rva, std::size_t size)
@@ -1355,6 +1472,96 @@ namespace
         return (module.flags & FrostbiteModule_HasExports) != 0 &&
                (module.flags & interesting) != 0;
     }
+
+    std::uintptr_t FindModuleBaseByName(
+        const std::vector<FrostbiteUniversal::ModuleRecord>& modules,
+        const std::wstring& moduleName)
+    {
+        for (const FrostbiteUniversal::ModuleRecord& module : modules)
+        {
+            if (ToLower(module.name) == ToLower(moduleName))
+                return module.baseAddress;
+        }
+
+        return 0;
+    }
+
+    void LogRuntimeOffsetSnapshot(
+        const std::vector<FrostbiteUniversal::ModuleRecord>& modules,
+        const std::vector<FrostbiteUniversal::ExportRecord>& exports,
+        const std::vector<FrostbiteUniversal::CatalogRecord>& catalog)
+    {
+        constexpr std::size_t kMaxModuleLogs = 12;
+        constexpr std::size_t kMaxExportLogs = 24;
+        constexpr std::size_t kMaxCatalogLogs = 12;
+
+        std::size_t moduleLogs = 0;
+        for (const FrostbiteUniversal::ModuleRecord& module : modules)
+        {
+            const std::uint32_t interesting =
+                FrostbiteModule_GameExecutable |
+                FrostbiteModule_EngineBuildInfo |
+                FrostbiteModule_RenderCore2 |
+                FrostbiteModule_DirectStorage |
+                FrostbiteModule_Oodle;
+            if ((module.flags & interesting) == 0)
+                continue;
+
+            std::wstringstream line;
+            line << L"Runtime offset module: " << module.name
+                 << L" base=0x" << std::hex << module.baseAddress
+                 << L" size=0x" << module.imageSize
+                 << L" flags=0x" << module.flags;
+            FrostbiteUniversal::Log::Write(line.str());
+
+            if (++moduleLogs >= kMaxModuleLogs)
+                break;
+        }
+
+        if (exports.empty())
+        {
+            FrostbiteUniversal::Log::Write(L"Runtime offset exports: none found in cataloged modules");
+        }
+        else
+        {
+            const std::size_t exportLimit = (std::min)(exports.size(), kMaxExportLogs);
+            for (std::size_t index = 0; index < exportLimit; ++index)
+            {
+                const FrostbiteUniversal::ExportRecord& record = exports[index];
+                const std::uintptr_t moduleBase = FindModuleBaseByName(modules, record.moduleName);
+                const std::uintptr_t rva = moduleBase != 0 && record.address >= moduleBase
+                    ? record.address - moduleBase
+                    : 0;
+
+                std::wstringstream line;
+                line << L"Runtime offset export: " << record.moduleName
+                     << L"!" << Utf8ToWide(record.name)
+                     << L" rva=0x" << std::hex << rva
+                     << L" va=0x" << record.address;
+                FrostbiteUniversal::Log::Write(line.str());
+            }
+        }
+
+        if (catalog.empty())
+        {
+            FrostbiteUniversal::Log::Write(L"Runtime offset catalog: no actor/model-like symbols discovered yet");
+        }
+        else
+        {
+            const std::size_t catalogLimit = (std::min)(catalog.size(), kMaxCatalogLogs);
+            for (std::size_t index = 0; index < catalogLimit; ++index)
+            {
+                const FrostbiteUniversal::CatalogRecord& record = catalog[index];
+                std::wstringstream line;
+                line << L"Runtime offset catalog: source=" << record.source
+                     << L" name=" << record.name
+                     << L" path=" << record.path
+                     << L" address=0x" << std::hex << record.address
+                     << L" flags=0x" << record.flags;
+                FrostbiteUniversal::Log::Write(line.str());
+            }
+        }
+    }
 }
 
 namespace FrostbiteUniversal
@@ -1368,29 +1575,55 @@ namespace FrostbiteUniversal
     bool Runtime::Initialize()
     {
         Log::Write(L"Runtime initialize requested");
-        std::lock_guard lock(m_mutex);
-        RebuildLocked();
-        m_initialized = true;
+        try
+        {
+            std::lock_guard lock(m_mutex);
+            RebuildLocked();
+            m_initialized = true;
 
-        const bool detected = (m_runtimeFlags & FrostbiteRuntime_IsFrostbiteProcess) != 0;
-        Log::Write(detected
-            ? L"Runtime initialize completed: Frostbite detected"
-            : L"Runtime initialize completed: Frostbite not detected");
-        return detected;
+            const bool detected = (m_runtimeFlags & FrostbiteRuntime_IsFrostbiteProcess) != 0;
+            Log::Write(detected
+                ? L"Runtime initialize completed: Frostbite detected"
+                : L"Runtime initialize completed: Frostbite not detected");
+            return detected;
+        }
+        catch (const std::exception& ex)
+        {
+            Log::Write(std::wstring(L"Runtime initialize caught C++ exception: ") + Utf8ToWide(ex.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Log::Write(L"Runtime initialize caught unknown C++ exception");
+            return false;
+        }
     }
 
     bool Runtime::Refresh()
     {
         Log::Write(L"Runtime refresh requested");
-        std::lock_guard lock(m_mutex);
-        RebuildLocked();
-        m_initialized = true;
+        try
+        {
+            std::lock_guard lock(m_mutex);
+            RebuildLocked();
+            m_initialized = true;
 
-        const bool detected = (m_runtimeFlags & FrostbiteRuntime_IsFrostbiteProcess) != 0;
-        Log::Write(detected
-            ? L"Runtime refresh completed: Frostbite detected"
-            : L"Runtime refresh completed: Frostbite not detected");
-        return detected;
+            const bool detected = (m_runtimeFlags & FrostbiteRuntime_IsFrostbiteProcess) != 0;
+            Log::Write(detected
+                ? L"Runtime refresh completed: Frostbite detected"
+                : L"Runtime refresh completed: Frostbite not detected");
+            return detected;
+        }
+        catch (const std::exception& ex)
+        {
+            Log::Write(std::wstring(L"Runtime refresh caught C++ exception: ") + Utf8ToWide(ex.what()));
+            return false;
+        }
+        catch (...)
+        {
+            Log::Write(L"Runtime refresh caught unknown C++ exception");
+            return false;
+        }
     }
 
     void Runtime::Shutdown()
@@ -1652,6 +1885,7 @@ namespace FrostbiteUniversal
                 << L", cas=" << m_casFileCount
                 << L", flags=0x" << std::hex << m_runtimeFlags;
         Log::Write(summary.str());
+        LogRuntimeOffsetSnapshot(m_modules, m_exports, m_catalog);
     }
 
     void Runtime::InspectGameRootLocked()
@@ -1659,31 +1893,31 @@ namespace FrostbiteUniversal
         const fs::path root = m_gameRoot;
         const fs::path dataRoot = root / L"Data";
 
-        if (fs::exists(dataRoot))
+        if (PathExistsNoThrow(dataRoot))
             m_runtimeFlags |= FrostbiteRuntime_HasDataDirectory;
 
-        if (fs::exists(dataRoot / L"initfs_Win32") ||
-            fs::exists(root / L"initfs_Win32") ||
+        if (PathExistsNoThrow(dataRoot / L"initfs_Win32") ||
+            PathExistsNoThrow(root / L"initfs_Win32") ||
             FindFileRecursive(dataRoot, L"initfs_Win32"))
         {
             m_runtimeFlags |= FrostbiteRuntime_HasInitFs;
         }
 
-        if (fs::exists(dataRoot / L"layout.toc") ||
-            fs::exists(root / L"layout.toc") ||
+        if (PathExistsNoThrow(dataRoot / L"layout.toc") ||
+            PathExistsNoThrow(root / L"layout.toc") ||
             FindFileRecursive(dataRoot, L"layout.toc"))
         {
             m_runtimeFlags |= FrostbiteRuntime_HasLayoutToc;
         }
 
-        if (fs::exists(root / L"EAAntiCheat.cfg") ||
-            fs::exists(root / L"EAAntiCheat.GameServiceLauncher.exe") ||
-            fs::exists(root / L"EAAntiCheat.GameServiceLauncher.dll"))
+        if (PathExistsNoThrow(root / L"EAAntiCheat.cfg") ||
+            PathExistsNoThrow(root / L"EAAntiCheat.GameServiceLauncher.exe") ||
+            PathExistsNoThrow(root / L"EAAntiCheat.GameServiceLauncher.dll"))
         {
             m_runtimeFlags |= FrostbiteRuntime_HasAntiCheatFiles;
         }
 
-        if (!fs::exists(dataRoot))
+        if (!PathExistsNoThrow(dataRoot))
             return;
 
         if (CountFilesWithExtensionRecursive(dataRoot, L".toc", m_tocFileCount))
@@ -1845,7 +2079,7 @@ namespace FrostbiteUniversal
         }
 
         const fs::path root = m_gameRoot;
-        if (!root.empty() && fs::exists(root) && m_catalog.size() < kMaxCatalogEntries)
+        if (!root.empty() && PathExistsNoThrow(root) && m_catalog.size() < kMaxCatalogEntries)
         {
             std::error_code ec;
             std::size_t visited = 0;
@@ -1854,7 +2088,8 @@ namespace FrostbiteUniversal
                 if (ec || ++visited > kMaxAssetFilesVisited || m_catalog.size() >= kMaxCatalogEntries)
                     break;
 
-                if (!entry.is_regular_file())
+                std::error_code entryError;
+                if (!entry.is_regular_file(entryError) || entryError)
                     continue;
 
                 const fs::path path = entry.path();
@@ -2098,9 +2333,19 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_RefreshActorModelList()
         count = static_cast<std::uint32_t>(g_actorModelList.size());
     }
 
-    std::wstringstream message;
-    message << L"Project actor/model list refreshed: " << count << L" entries";
-    FrostbiteUniversal::Log::Write(message.str());
+    const DWORD now = ::GetTickCount();
+    if (count != g_lastActorModelRefreshLogCount ||
+        g_lastActorModelRefreshLogTick == 0 ||
+        now - g_lastActorModelRefreshLogTick >= 1000)
+    {
+        g_lastActorModelRefreshLogTick = now;
+        g_lastActorModelRefreshLogCount = count;
+
+        std::wstringstream message;
+        message << L"Project actor/model list refreshed: " << count << L" entries";
+        FrostbiteUniversal::Log::Write(message.str());
+    }
+
     return static_cast<int>(count);
 }
 
@@ -2122,6 +2367,21 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_GetActorModelInfo(std::uint32_t in
     *outInfo = g_actorModelList[index];
     NormalizeActorModelInfo(*outInfo);
     return 1;
+}
+
+FROSTBITEUNIVERSAL_API std::uint32_t FrostbiteUniversal_CopyActorModelList(FrostbiteActorModelInfo* outItems, std::uint32_t maxItems)
+{
+    if (!outItems || maxItems == 0)
+        return 0;
+
+    std::lock_guard lock(g_projectBridgeMutex);
+    const std::uint32_t count = static_cast<std::uint32_t>(
+        (std::min)(static_cast<std::size_t>(maxItems), g_actorModelList.size()));
+
+    for (std::uint32_t index = 0; index < count; ++index)
+        outItems[index] = g_actorModelList[index];
+
+    return count;
 }
 
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_SetTimescaleCallback(FrostbiteTimescaleCallback callback, void* userData)
@@ -2304,6 +2564,36 @@ FROSTBITEUNIVERSAL_API int FrostbiteUniversal_HasFeatureBridge()
 {
     std::lock_guard lock(g_projectBridgeMutex);
     return HasFeatureBridgeLocked() ? 1 : 0;
+}
+
+FROSTBITEUNIVERSAL_API int FrostbiteUniversal_ExecuteConsoleCommand(const wchar_t* command)
+{
+    if (!command || command[0] == L'\0')
+        return 0;
+
+    HostExecuteConsoleCommandFn hostExecute = nullptr;
+
+    {
+        std::lock_guard lock(g_projectBridgeMutex);
+        ResolveHostBridgeExportsLocked();
+        hostExecute = g_hostExecuteConsoleCommand;
+    }
+
+    std::wstringstream message;
+    message << L"Console command requested: " << command;
+    FrostbiteUniversal::Log::Write(message.str());
+
+    if (!hostExecute)
+    {
+        FrostbiteUniversal::Log::Write(L"Console command bridge unavailable; command handled by Universal only");
+        return 0;
+    }
+
+    const bool executed = SafeCallHostExecuteConsoleCommand(hostExecute, command);
+    FrostbiteUniversal::Log::Write(executed
+        ? L"Console command bridge executed command"
+        : L"Console command bridge rejected or failed command");
+    return executed ? 1 : 0;
 }
 
 FROSTBITEUNIVERSAL_API int FrostbiteUniversal_InstallOwnedProjectHooks()

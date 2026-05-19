@@ -6,10 +6,10 @@
 Source/FrostbiteSDKGenerator/build/x64/Release/FrostbiteSDKGenerator.exe
 ```
 
-The DLL build lives in:
+The same backend is embedded by `FrostbiteUniversal` for the ImGui SDK tab:
 
 ```text
-Source/FrostbiteSDKGeneratorDll/build/x64/Release/FrostbiteSDKGenerator.dll
+Source/FrostbiteUniversal/build/x64/Release/FrostbiteUniversal.dll
 ```
 
 The public C API is declared in:
@@ -22,7 +22,7 @@ Source/FrostbiteSDKGenerator/Include/FrostbiteSDKGenerator.h
 
 - Static folder scan mode for owned game folders/research builds.
 - Live injected snapshot mode for owned/local processes.
-- Console progress output in DLL mode.
+- Console progress output in embedded Universal-backend mode.
 - Module, section, import, export, symbol, PDB, RTTI, vtable, and virtual slot capture.
 - ASCII/UTF-16 string discovery and read-only xref analysis.
 - `.pdata` function boundary recovery.
@@ -32,7 +32,7 @@ Source/FrostbiteSDKGenerator/Include/FrostbiteSDKGenerator.h
 
 The dumper is discovery-based. It does not require provider exports, does not patch process memory, and does not bypass anti-cheat or protected files.
 
-## DLL Entry Points
+## Backend Entry Points
 
 ```cpp
 FrostbiteSDKGenerator_OpenConsole();
@@ -40,7 +40,7 @@ FrostbiteSDKGenerator_SetVerbose(1);
 FrostbiteSDKGenerator_GenerateDefault(L".\\GeneratedSDK");
 ```
 
-Verbose mode is on by default for DLL calls. It opens or attaches a console and prints scanning, include/skip, export-scan, RTTI/vtable reconstruction, `.pdata` function-bound recovery, read-only string/xref discovery, call-graph mapping, asset-reference scanning, and file-write progress in real time.
+Verbose mode is on by default for embedded backend calls. It opens or attaches a console and prints scanning, include/skip, export-scan, RTTI/vtable reconstruction, `.pdata` function-bound recovery, read-only string/xref discovery, call-graph mapping, asset-reference scanning, and file-write progress in real time.
 
 ## Build
 

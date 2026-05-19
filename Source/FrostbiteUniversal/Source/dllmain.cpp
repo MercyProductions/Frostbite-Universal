@@ -3,9 +3,13 @@
 
 #include <Windows.h>
 
+#include <cstring>
+#include <exception>
+#include <string>
+
 namespace
 {
-    DWORD WINAPI BootstrapThread(void* context)
+    DWORD WINAPI BootstrapThreadBody(void* context)
     {
         const HMODULE selfModule = static_cast<HMODULE>(context);
         FrostbiteUniversal::Log::Initialize(selfModule);
@@ -16,6 +20,7 @@ namespace
             ? L"Frostbite runtime detection: positive"
             : L"Frostbite runtime detection: negative");
 
+        FrostbiteUniversal_PrimeGeneratedSdkCache(nullptr);
         FrostbiteUniversal::Log::Write(L"Project bridge is lazy: actor/model and timescale host calls wait for explicit ImGui/API requests");
 
         if (FrostbiteUniversal_HasSharedImGui())
@@ -31,6 +36,41 @@ namespace
                 : L"Self-hosted overlay bootstrap: failed");
         }
         return 0;
+    }
+
+    DWORD BootstrapThreadWithCppGuards(void* context)
+    {
+        try
+        {
+            return BootstrapThreadBody(context);
+        }
+        catch (const std::exception& ex)
+        {
+            FrostbiteUniversal::Log::Write(L"Bootstrap thread caught a C++ exception");
+            FrostbiteUniversal::Log::Write(std::wstring(L"Bootstrap exception: ") + std::wstring(ex.what(), ex.what() + std::strlen(ex.what())));
+            return 0;
+        }
+        catch (...)
+        {
+            FrostbiteUniversal::Log::Write(L"Bootstrap thread caught an unknown C++ exception");
+            return 0;
+        }
+    }
+
+    DWORD WINAPI BootstrapThread(void* context)
+    {
+        DWORD exceptionCode = 0;
+        __try
+        {
+            return BootstrapThreadWithCppGuards(context);
+        }
+        __except ((exceptionCode = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER)
+        {
+            wchar_t message[160] = {};
+            swprintf_s(message, L"Bootstrap thread caught SEH exception 0x%08X", exceptionCode);
+            FrostbiteUniversal::Log::Write(message);
+            return 0;
+        }
     }
 }
 

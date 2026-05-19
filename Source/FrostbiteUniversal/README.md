@@ -24,11 +24,27 @@ Source/FrostbiteUniversal/Include/FrostbiteUniversal.h
 
 - Self-hosted ImGui overlay with F4 visibility toggle.
 - Console/log initialization for runtime diagnostics.
+- Embedded SDK generator backend with an SDK tab for full dump/report generation.
 - Runtime module, export, catalog, and report APIs.
 - Owned-project bridge through explicit `FrostbiteGame_*` exports.
 - Project tab controls for timescale, skybox tint, fog tint, debug material tint, wireframe/debug flags, FOV, and view-angle preview.
 - Live actor/model table with actor name, class, model, asset path, position, computed size, radius, and flags.
 - Optional projected debug overlays for model boxes, snaplines, and selected view target markers.
+- Provider-based adapter APIs for entity snapshots, view-projection matrices, viewport size, W2S validation, capability scoring, JSON snapshot recording, and offline replay.
+- ImGui Adapter tab for renderer status, provider timing, projected/clipped counts, SDK-cache status, and Pass/Warn capability checks.
+
+## Provider Adapter
+
+Use these exports when a test harness, plugin, or generated SDK bridge can safely supply diagnostic data:
+
+```cpp
+FrostbiteUniversal_RegisterEntityProvider(...);
+FrostbiteUniversal_RegisterViewProjectionProvider(...);
+FrostbiteUniversal_RegisterViewportProvider(...);
+FrostbiteUniversal_UpdateProviders();
+```
+
+The DLL projects provider-fed actor/model bounds into screen space and feeds the existing ImGui box/snapline drawing path. No game-specific memory scanning or hardcoded actor offsets are part of this adapter.
 
 ## SDK Bridge Template
 

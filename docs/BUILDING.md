@@ -35,9 +35,10 @@ The solution builds:
 
 | Project | Type | Output |
 | --- | --- | --- |
-| `FrostbiteUniversal` | DLL | `Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll` |
 | `FrostbiteSDKGenerator` | EXE | `Source\FrostbiteSDKGenerator\build\x64\Release\FrostbiteSDKGenerator.exe` |
-| `FrostbiteSDKGeneratorDll` | DLL | `Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll` |
+| `FrostbiteUniversal` | DLL | `Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll` |
+
+`FrostbiteUniversal` embeds the SDK generator backend, so the ImGui SDK tab can run a full dump without a separate generator DLL project.
 
 ## Build The SDK Bridge Template
 
@@ -89,12 +90,6 @@ Copy-Item ".\Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll"
 Copy-Item ".\Source\FrostbiteSDKGenerator\build\x64\Release\FrostbiteSDKGenerator.exe" `
   ".\Tools\FrostbiteSDKGenerator.exe" -Force
 
-Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" `
-  ".\Tools\FrostbiteSDKGenerator.dll" -Force
-
-Copy-Item ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll" `
-  ".\Tools\INJECT_THIS_FOR_SDK_DUMP_FrostbiteSDKGenerator.dll" -Force
-
 Copy-Item ".\Source\FrostbiteSDKGenerator\Include\FrostbiteSDKGenerator.h" `
   ".\Tools\FrostbiteSDKGenerator.h" -Force
 
@@ -108,8 +103,8 @@ Copy-Item ".\Source\FrostbiteUniversal\Include\FrostbiteUniversal.h" `
 
 ```powershell
 dumpbin /headers ".\Source\FrostbiteSDKGenerator\build\x64\Release\FrostbiteSDKGenerator.exe"
-dumpbin /imports ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll"
-dumpbin /exports ".\Source\FrostbiteSDKGeneratorDll\build\x64\Release\FrostbiteSDKGenerator.dll"
+dumpbin /imports ".\Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll"
+dumpbin /exports ".\Source\FrostbiteUniversal\build\x64\Release\FrostbiteUniversal.dll"
 ```
 
 The dumper itself should remain the main source of SDK reports. `dumpbin` is best used as a supporting audit tool.

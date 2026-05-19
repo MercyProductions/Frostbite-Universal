@@ -26,6 +26,7 @@ GetFeatureState=MyGame_GetUniversalFeatureState
 SetSkyboxTint=MyGame_SetSkyboxTint
 SetDebugMaterialTint=MyGame_SetDebugMaterialTint
 SetFogTint=MyGame_SetFogTint
+ExecuteConsoleCommand=MyGame_ExecuteConsoleCommand
 ```
 
 ```cpp
@@ -156,6 +157,15 @@ void __stdcall FrostbiteGame_SetFogTint(int enabled, float r, float g, float b, 
 {
     YourWorldRenderer->SetFogTintEnabled(enabled != 0);
     YourWorldRenderer->SetFogTint(r, g, b, density);
+}
+
+extern "C" __declspec(dllexport)
+int __stdcall FrostbiteGame_ExecuteConsoleCommand(const wchar_t* command)
+{
+    if (!command || command[0] == L'\0')
+        return 0;
+
+    return YourDebugConsole->Execute(command) ? 1 : 0;
 }
 ```
 
